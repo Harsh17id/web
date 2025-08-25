@@ -40,20 +40,15 @@
     </div>
 
     <!-- 💬 Chat Display -->
-    <div class="bg-gray-100 rounded-xl p-4 h-48 overflow-y-auto text-left shadow-inner">
-      <p id="userText" class="mb-3 text-gray-800"></p>
-      <p id="aiResponse" class="text-purple-700 font-semibold"></p>
+    <div class="bg-gray-100 rounded-xl p-4 h-64 overflow-y-auto text-left shadow-inner">
+      <div id="chatBox" class="space-y-3 text-sm"></div>
     </div>
 
   </div>
 
   <script>
     let recognition;
-
-    // Log voices (debugging)
-    speechSynthesis.onvoiceschanged = () => {
-      console.log("Available voices:", speechSynthesis.getVoices());
-    };
+    let manuallyStopped = false;
 
     // 🔊 Speak with fallback
     function speakText(text, lang) {
@@ -61,14 +56,18 @@
       utterance.lang = lang;
 
       let voices = speechSynthesis.getVoices();
-      let voice = voices.find(v => v.lang === lang);
+      let voice = voices.find(v => v.lang === lang) 
+               || voices.find(v => v.lang.startsWith(lang.split("-")[0])); // fallback
       if (voice) utterance.voice = voice;
 
       speechSynthesis.speak(utterance);
     }
 
+    // 🎙️ Start recognition
     function startRecognition() {
+      manuallyStopped = false;
       const lang = document.getElementById("langSelect").value;
+
       recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
       recognition.lang = lang;
       recognition.continuous = true;
@@ -76,27 +75,29 @@
       recognition.start();
 
       recognition.onresult = function(event) {
-        const lastResultIndex = event.results.length - 1;
-        const text = event.results[lastResultIndex][0].transcript;
+        const text = event.results[event.results.length - 1][0].transcript;
 
         // Stop AI voice if user speaks
         if (speechSynthesis.speaking) {
           speechSynthesis.cancel();
         }
 
-        document.getElementById("userText").innerText = "👤 You: " + text;
+        addMessage("👤 You", text, "text-gray-800");
         sendToFlask(text, lang);
       };
 
       recognition.onend = function() {
-        recognition.start(); // auto-restart
+        if (!manuallyStopped) recognition.start(); 
       };
     }
 
+    // ⏹ Stop recognition
     function stopRecognition() {
+      manuallyStopped = true;
       if (recognition) recognition.stop();
     }
 
+    // 📤 Send message to Flask backend
     function sendToFlask(text, lang) {
       fetch("/chat", {
         method: "POST",
@@ -105,10 +106,25 @@
       })
       .then(res => res.json())
       .then(data => {
-        document.getElementById("aiResponse").innerText = "🤖 AI: " + data.reply;
+        addMessage("🤖 AI", data.reply, "text-purple-700 font-semibold");
         speakText(data.reply, data.lang);
       });
     }
+
+    // 📝 Add message to chatbox
+    function addMessage(sender, text, classes) {
+      const chatBox = document.getElementById("chatBox");
+      const p = document.createElement("p");
+      p.className = classes;
+      p.innerHTML = `<strong>${sender}:</strong> ${text}`;
+      chatBox.appendChild(p);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    // Log available voices (debugging)
+    speechSynthesis.onvoiceschanged = () => {
+      console.log("Available voices:", speechSynthesis.getVoices());
+    };
   </script>
 </body>
 </html>
